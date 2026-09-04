@@ -1,0 +1,122 @@
+import os
+import sys
+import argparse
+import logging
+from datetime import datetime, date
+import pandas as pd
+
+# Setup candidate import paths
+script_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.dirname(script_dir)
+pipeline_dir = os.path.dirname(src_dir)
+quant_system_dir = os.path.dirname(pipeline_dir)
+
+for p in [
+    pipeline_dir,
+    src_dir,
+    os.path.join(quant_system_dir, "common-lib"),
+    os.path.join(quant_system_dir, "common_lib"),
+    os.path.join(quant_system_dir, "quant-pwa", "gateway"),
+    "/app",
+    "/volume2/homes/rachardv/git-repos/master/common-lib"
+]:
+    if os.path.exists(p) and p not in sys.path:
+        sys.path.insert(0, p)
+
+from src.database.schema import ensure_tables, upsert_scans, upsert_summary
+from src.pipeline.collector import collect_flow_candidates
+from src.pipeline.gexdex_matcher import match_candidates_gexdex
+from src.pipeline.confluence_scorer import score_all_candidates, build_daily_summary
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger("quant.pipeline.confluence.daily")
+
+
+def run_pipeline(target_date_str: str = None, min_premium: float = 1_000_000.0) -> int:
+    """Executes the daily market confluence scan batch."""
+    logger.info("======================================================================")
+    logger.info("   STARTING MARKET CONFLUENCE DAILY INCREMENTAL PIPELINE")
+    logger.info("======================================================================")
+
+    # 1. Resolve Engine via common_lib
+    try:
+        from common_lib.config.main_config import load_config
+        from common_lib.connectors.postgres import get_postgres_engine
+        config = load_config()
+        engine = get_postgres_engine(config)
+    except Exception as ex:
+        logger.error(f"Failed to initialize PostgreSQL database engine: {ex}")
+        return 1
+
+    # 2. Ensure Target Tables Exist
+    try:
+        ensure_tables(engine)
+    except Exception as ex:
+        logger.error(f"Failed to ensure database tables: {ex}")
+        return 1
+
+    # 3. Parse Target Date
+    target_dt = None
+    if target_date_str:
+        try:
+            target_dt = pd.to_datetime(target_date_str).date()
+        except Exception as ex:
+            logger.error(f"Invalid target date format '{target_date_str}': {ex}")
+            return 1
+
+    # 4. Step 1: Collect Flow Candidates
+    resolved_date, flow_candidates = collect_flow_candidates(
+        engine,
+        target_date=target_dt,
+        min_symbol_premium=min_premium
+    )
+
+    if not flow_candidates:
+        logger.info(f"No flow records found or staleness circuit breaker engaged for date={resolved_date}. Exiting cleanly.")
+        return 0
+
+    logger.info(f"Identified {len(flow_candidates)} prospective symbols from unusual flow for {resolved_date}.")
+
+    # 5. Step 2: Match with GEX/DEX
+    matched_candidates = match_candidates_gexdex(flow_candidates)
+
+    # 6. Step 3: Confluence Scoring & Classification
+    scored_records = score_all_candidates(matched_candidates)
+    summary_record = build_daily_summary(resolved_date, scored_records)
+
+    # 7. Step 4: Idempotent Upsert to PostgreSQL
+    try:
+        upsert_scans(engine, scored_records)
+        upsert_summary(engine, summary_record)
+    except Exception as ex:
+        logger.error(f"Failed to upsert records into PostgreSQL: {ex}")
+        return 1
+
+    logger.info("----------------------------------------------------------------------")
+    logger.info(f"  MARKET CONFLUENCE SCAN COMPLETE: {resolved_date}")
+    logger.info(f"  Total Scanned : {summary_record['total_scanned_count']}")
+    logger.info(f"  Bullish       : {summary_record['confirmed_bull_count']}")
+    logger.info(f"  Bearish       : {summary_record['confirmed_bear_count']}")
+    logger.info(f"  Vol Pin       : {summary_record['vol_pin_count']}")
+    logger.info(f"  Divergent     : {summary_record['divergent_count']}")
+    logger.info(f"  Top Whale     : {summary_record['top_whale_ticker']} ({summary_record['formatted_top_whale_premium']})")
+    logger.info(f"  Market Regime : {summary_record['market_regime_summary']}")
+    logger.info("======================================================================")
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Daily Market Confluence ETL Pipeline")
+    parser.add_argument("--date", help="Optional target market session date (YYYY-MM-DD)")
+    parser.add_argument("--min-premium", type=float, default=1_000_000.0, help="Minimum total flow premium per symbol ($)")
+    args = parser.parse_args()
+
+    exit_code = run_pipeline(target_date_str=args.date, min_premium=args.min_premium)
+    sys.exit(exit_code)
+
+
+if __name__ == "__main__":
+    main()
