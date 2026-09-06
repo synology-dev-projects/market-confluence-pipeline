@@ -155,9 +155,9 @@ def score_and_classify_record(item: Dict[str, Any]) -> Dict[str, Any]:
     put_prem = float(item.get("put_premium") or 0.0)
 
     if play_type == "BULL_SPRING":
-        flow_ratio = round(call_prem / max(put_prem, 1.0), 2)
+        flow_ratio = min(round(call_prem / max(put_prem, 1.0), 2), 999.99)
     else:
-        flow_ratio = round(put_prem / max(call_prem, 1.0), 2)
+        flow_ratio = min(round(put_prem / max(call_prem, 1.0), 2), 999.99)
 
     if flow_ratio >= 3.0:
         s_flow = 100.0

@@ -54,20 +54,27 @@ def match_candidates_gexdex(
     tickers = [c["ticker"] for c in candidates]
     metrics_map = {}
 
-    # 1. Attempt GEX/DEX Microservice HTTP API
-    try:
-        url = f"{GEXDEX_API_URL.rstrip('/')}/api/v1/gexdex"
-        headers = {"X-API-Key": GEXDEX_API_KEY}
-        params = {"tickers": ",".join(tickers)}
-        resp = requests.get(url, headers=headers, params=params, timeout=20)
-        if resp.ok:
-            api_data = resp.json()
-            metrics_map = api_data.get("batch_data", api_data)
-            logger.info(f"Retrieved GEX/DEX API data for {len(metrics_map)} / {len(tickers)} tickers.")
-        else:
-            logger.warning(f"GEX/DEX API returned HTTP status {resp.status_code}: {resp.text}")
-    except Exception as api_err:
-        logger.warning(f"GEX/DEX HTTP query failed ({api_err}); falling back to in-process engine...")
+    # 1. Attempt GEX/DEX Microservice HTTP API with chunking (10 tickers per request)
+    chunk_size = 10
+    timeout_sec = 60
+    for i in range(0, len(tickers), chunk_size):
+        chunk = tickers[i:i + chunk_size]
+        try:
+            url = f"{GEXDEX_API_URL.rstrip('/')}/api/v1/gexdex"
+            headers = {"X-API-Key": GEXDEX_API_KEY}
+            params = {"tickers": ",".join(chunk)}
+            resp = requests.get(url, headers=headers, params=params, timeout=timeout_sec)
+            if resp.ok:
+                api_data = resp.json()
+                chunk_data = api_data.get("batch_data", api_data)
+                metrics_map.update(chunk_data)
+                logger.info(f"Retrieved GEX/DEX API data for chunk {i//chunk_size + 1} ({len(chunk_data)} tickers).")
+            else:
+                logger.warning(f"GEX/DEX API chunk {i//chunk_size + 1} returned HTTP {resp.status_code}: {resp.text}")
+        except Exception as api_err:
+            logger.warning(f"GEX/DEX HTTP query chunk {i//chunk_size + 1} failed: {api_err}")
+
+    logger.info(f"Retrieved GEX/DEX API data for {len(metrics_map)} / {len(tickers)} total tickers.")
 
     # 2. Fallback to in-process engine if API failed or returned empty
     if not metrics_map:

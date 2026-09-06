@@ -119,7 +119,7 @@ def collect_flow_candidates(
             bias = "NEUTRAL"
 
         hits_count = len(group)
-        call_put_ratio = round(call_prem / max(put_prem, 1.0), 2)
+        call_put_ratio = min(round(call_prem / max(put_prem, 1.0), 2), 999.99)
 
         whale_prints = group[group["PREMIUM"] >= 1_000_000.0]
         whale_count = len(whale_prints)

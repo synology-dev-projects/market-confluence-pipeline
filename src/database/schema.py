@@ -49,7 +49,7 @@ DAILY_CONFLUENCE_SCANS = sa.Table(
     sa.Column("pin_dte", sa.Integer),
     sa.Column("pin_dist_pct", sa.Numeric(5, 1)),
     sa.Column("flow_hits_count", sa.Integer, default=0),
-    sa.Column("flow_call_put_ratio", sa.Numeric(8, 2)),
+    sa.Column("flow_call_put_ratio", sa.Numeric(14, 2)),
     sa.Column("viability_score", sa.Numeric(5, 1)),
     sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now())
 )
@@ -93,7 +93,7 @@ def ensure_tables(engine: sa.Engine) -> None:
         ("pin_dte", "INTEGER"),
         ("pin_dist_pct", "NUMERIC(5, 1)"),
         ("flow_hits_count", "INTEGER DEFAULT 0"),
-        ("flow_call_put_ratio", "NUMERIC(8, 2)"),
+        ("flow_call_put_ratio", "NUMERIC(14, 2)"),
         ("viability_score", "NUMERIC(5, 1)"),
     ]
     new_summary_cols = [
@@ -110,6 +110,12 @@ def ensure_tables(engine: sa.Engine) -> None:
                 conn.execute(sa.text(f"ALTER TABLE daily_confluence_scans ADD COLUMN IF NOT EXISTS {col_name} {col_type}"))
             except Exception as e:
                 logger.warning(f"Could not add column {col_name} to daily_confluence_scans: {e}")
+
+        # Ensure column width is NUMERIC(14, 2) if it was previously NUMERIC(8, 2)
+        try:
+            conn.execute(sa.text("ALTER TABLE daily_confluence_scans ALTER COLUMN flow_call_put_ratio TYPE NUMERIC(14, 2)"))
+        except Exception as e:
+            logger.warning(f"Could not alter flow_call_put_ratio column width: {e}")
 
         for col_name, col_type in new_summary_cols:
             try:
