@@ -55,10 +55,12 @@ def get_latest_flow_date(engine: sa.Engine) -> Optional[date]:
 def collect_flow_candidates(
     engine: sa.Engine,
     target_date: Optional[date] = None,
-    min_symbol_premium: float = 1_000_000.0
+    min_symbol_premium: float = 1_000_000.0,
+    top_n: int = 50
 ) -> Tuple[Optional[date], List[Dict[str, Any]]]:
     """
     Collects and aggregates institutional options flow grouped by symbol for the target_date.
+    Returns the Top N tickers (default 50) by total institutional premium as the primary watchlist.
     Applies staleness checking: if target_date is not specified, uses the latest session date.
     Returns: (resolved_scan_date, list of aggregated candidate dictionaries)
     """
@@ -116,6 +118,9 @@ def collect_flow_candidates(
         else:
             bias = "NEUTRAL"
 
+        hits_count = len(group)
+        call_put_ratio = round(call_prem / max(put_prem, 1.0), 2)
+
         whale_prints = group[group["PREMIUM"] >= 1_000_000.0]
         whale_count = len(whale_prints)
 
@@ -147,6 +152,8 @@ def collect_flow_candidates(
             "call_premium_pct": call_pct,
             "put_premium_pct": put_pct,
             "flow_bias": bias,
+            "flow_hits_count": hits_count,
+            "flow_call_put_ratio": call_put_ratio,
             "whale_prints_count": whale_count,
             "top_whale_premium": top_whale_prem,
             "formatted_top_whale_premium": format_dollar_amount(top_whale_prem) if top_whale_prem > 0 else "$0.00",
@@ -154,7 +161,10 @@ def collect_flow_candidates(
             "net_sentiment_score": net_sentiment
         })
 
-    # Sort descending by total flow premium
+    # Sort descending by total flow premium and cap at top_n
     candidates.sort(key=lambda x: x["total_flow_premium"], reverse=True)
-    logger.info(f"Collected {len(candidates)} prospective flow candidates for {resolved_date}.")
+    if top_n and len(candidates) > top_n:
+        candidates = candidates[:top_n]
+
+    logger.info(f"Collected Top {len(candidates)} prospective flow candidates for {resolved_date}.")
     return resolved_date, candidates

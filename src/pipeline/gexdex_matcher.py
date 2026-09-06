@@ -94,6 +94,15 @@ def match_candidates_gexdex(
             net_dex = float(_get_metric_val(metrics, "net_dex", 0.0) or 0.0)
             regime = str(_get_metric_val(metrics, "gamma_regime", "DATA_UNAVAILABLE") or "DATA_UNAVAILABLE").upper()
 
+            gex_above_raw = _get_metric_val(metrics, "gex_above_pct", None)
+            dex_above_raw = _get_metric_val(metrics, "dex_above_pct", None)
+            gex_above = float(gex_above_raw) if gex_above_raw is not None else None
+            dex_above = float(dex_above_raw) if dex_above_raw is not None else None
+
+            key_gamma = float(_get_metric_val(metrics, "key_gamma_strike", 0.0) or 0.0)
+            dominant_exp = str(_get_metric_val(metrics, "dominant_expiration", "") or "")
+            front_week_gex = float(_get_metric_val(metrics, "front_week_gex_pct", 0.0) or 0.0)
+
             spot_vs_flip = round(((spot - flip) / flip * 100.0), 1) if flip > 0 else 0.0
             wall_spread = f"${p_wall:.2f} - ${c_wall:.2f}"
 
@@ -110,6 +119,11 @@ def match_candidates_gexdex(
                 "call_wall": c_wall,
                 "put_wall": p_wall,
                 "wall_spread_range": wall_spread,
+                "gex_above_pct": gex_above,
+                "dex_above_pct": dex_above,
+                "key_gamma_strike": key_gamma,
+                "dominant_expiration": dominant_exp,
+                "front_week_gex_pct": front_week_gex,
                 "gex_available": True
             }
         else:
@@ -126,6 +140,11 @@ def match_candidates_gexdex(
                 "call_wall": None,
                 "put_wall": None,
                 "wall_spread_range": "N/A",
+                "gex_above_pct": None,
+                "dex_above_pct": None,
+                "key_gamma_strike": None,
+                "dominant_expiration": None,
+                "front_week_gex_pct": None,
                 "gex_available": False
             }
 

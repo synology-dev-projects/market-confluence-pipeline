@@ -85,7 +85,7 @@ def run_pipeline(target_date_str: str = None, min_premium: float = 1_000_000.0) 
 
     # 6. Step 3: Confluence Scoring & Classification
     scored_records = score_all_candidates(matched_candidates)
-    summary_record = build_daily_summary(resolved_date, scored_records)
+    summary_record = build_daily_summary(resolved_date, scored_records, total_watchlist_count=len(flow_candidates))
 
     # 7. Step 4: Idempotent Upsert to PostgreSQL
     try:
@@ -96,14 +96,13 @@ def run_pipeline(target_date_str: str = None, min_premium: float = 1_000_000.0) 
         return 1
 
     logger.info("----------------------------------------------------------------------")
-    logger.info(f"  MARKET CONFLUENCE SCAN COMPLETE: {resolved_date}")
-    logger.info(f"  Total Scanned : {summary_record['total_scanned_count']}")
-    logger.info(f"  Bullish       : {summary_record['confirmed_bull_count']}")
-    logger.info(f"  Bearish       : {summary_record['confirmed_bear_count']}")
-    logger.info(f"  Vol Pin       : {summary_record['vol_pin_count']}")
-    logger.info(f"  Divergent     : {summary_record['divergent_count']}")
-    logger.info(f"  Top Whale     : {summary_record['top_whale_ticker']} ({summary_record['formatted_top_whale_premium']})")
-    logger.info(f"  Market Regime : {summary_record['market_regime_summary']}")
+    logger.info(f"  ASYMMETRIC RADAR SCAN COMPLETE: {resolved_date}")
+    logger.info(f"  Watchlist Scanned  : {summary_record['total_watchlist_count']}")
+    logger.info(f"  Qualifying Plays   : {summary_record['total_scanned_count']} (Top 10 Capped)")
+    logger.info(f"  Bull Springs       : {summary_record['qualifying_bull_spring_count']}")
+    logger.info(f"  Bear Exhaustions   : {summary_record['qualifying_bear_exhaustion_count']}")
+    logger.info(f"  Top Catalyst       : {summary_record['top_catalyst_ticker']} ({summary_record['top_catalyst_expiry']})")
+    logger.info(f"  Market Regime      : {summary_record['market_regime_summary']}")
     logger.info("======================================================================")
     return 0
 

@@ -39,6 +39,18 @@ DAILY_CONFLUENCE_SCANS = sa.Table(
     sa.Column("confluence_status", sa.String(64), nullable=False),
     sa.Column("confluence_score", sa.Numeric(5, 1), nullable=False),
     sa.Column("confluence_rationale", sa.Text),
+    sa.Column("play_type", sa.String(32)),
+    sa.Column("rank", sa.Integer),
+    sa.Column("exposure_imbalance_pct", sa.Numeric(5, 1)),
+    sa.Column("imbalance_type", sa.String(16)),
+    sa.Column("pin_wall_strike", sa.Numeric(12, 2)),
+    sa.Column("pin_wall_type", sa.String(32)),
+    sa.Column("pin_expiration", sa.String(32)),
+    sa.Column("pin_dte", sa.Integer),
+    sa.Column("pin_dist_pct", sa.Numeric(5, 1)),
+    sa.Column("flow_hits_count", sa.Integer, default=0),
+    sa.Column("flow_call_put_ratio", sa.Numeric(8, 2)),
+    sa.Column("viability_score", sa.Numeric(5, 1)),
     sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now())
 )
 
@@ -56,13 +68,55 @@ DAILY_CONFLUENCE_SUMMARY = sa.Table(
     sa.Column("top_whale_premium", sa.Numeric(18, 2)),
     sa.Column("formatted_top_whale_premium", sa.String(32)),
     sa.Column("market_regime_summary", sa.String(64)),
+    sa.Column("total_watchlist_count", sa.Integer, default=0),
+    sa.Column("qualifying_bull_spring_count", sa.Integer, default=0),
+    sa.Column("qualifying_bear_exhaustion_count", sa.Integer, default=0),
+    sa.Column("top_catalyst_ticker", sa.String(16)),
+    sa.Column("top_catalyst_expiry", sa.String(32)),
     sa.Column("scanned_at", sa.DateTime(timezone=True), server_default=sa.func.now())
 )
 
 
 def ensure_tables(engine: sa.Engine) -> None:
-    """Ensures that daily_confluence_scans and daily_confluence_summary tables exist in PostgreSQL."""
+    """Ensures that daily_confluence_scans and daily_confluence_summary tables and new columns exist."""
     METADATA.create_all(engine)
+
+    # Safe additive migrations for existing tables
+    new_scan_cols = [
+        ("play_type", "VARCHAR(32)"),
+        ("rank", "INTEGER"),
+        ("exposure_imbalance_pct", "NUMERIC(5, 1)"),
+        ("imbalance_type", "VARCHAR(16)"),
+        ("pin_wall_strike", "NUMERIC(12, 2)"),
+        ("pin_wall_type", "VARCHAR(32)"),
+        ("pin_expiration", "VARCHAR(32)"),
+        ("pin_dte", "INTEGER"),
+        ("pin_dist_pct", "NUMERIC(5, 1)"),
+        ("flow_hits_count", "INTEGER DEFAULT 0"),
+        ("flow_call_put_ratio", "NUMERIC(8, 2)"),
+        ("viability_score", "NUMERIC(5, 1)"),
+    ]
+    new_summary_cols = [
+        ("total_watchlist_count", "INTEGER DEFAULT 0"),
+        ("qualifying_bull_spring_count", "INTEGER DEFAULT 0"),
+        ("qualifying_bear_exhaustion_count", "INTEGER DEFAULT 0"),
+        ("top_catalyst_ticker", "VARCHAR(16)"),
+        ("top_catalyst_expiry", "VARCHAR(32)"),
+    ]
+
+    with engine.begin() as conn:
+        for col_name, col_type in new_scan_cols:
+            try:
+                conn.execute(sa.text(f"ALTER TABLE daily_confluence_scans ADD COLUMN IF NOT EXISTS {col_name} {col_type}"))
+            except Exception as e:
+                logger.warning(f"Could not add column {col_name} to daily_confluence_scans: {e}")
+
+        for col_name, col_type in new_summary_cols:
+            try:
+                conn.execute(sa.text(f"ALTER TABLE daily_confluence_summary ADD COLUMN IF NOT EXISTS {col_name} {col_type}"))
+            except Exception as e:
+                logger.warning(f"Could not add column {col_name} to daily_confluence_summary: {e}")
+
     logger.info("Verified/created daily_confluence_scans and daily_confluence_summary tables.")
 
 
