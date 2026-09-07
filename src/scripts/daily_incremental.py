@@ -4,6 +4,7 @@ import argparse
 import logging
 from datetime import datetime, date
 import pandas as pd
+import sqlalchemy as sa
 
 # Setup candidate import paths
 script_dir = os.path.dirname(os.path.abspath(__file__))
