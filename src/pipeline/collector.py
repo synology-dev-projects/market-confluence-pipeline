@@ -106,8 +106,8 @@ def collect_flow_candidates(
             logger.info(f"Excluding broad market/volatility index symbol: {sym_str}")
             continue
 
-        # Filter out artifact prints (strike <= 0 or missing values)
-        valid_mask = group["STRIKE_PRICE"].fillna(0) > 0
+        # Filter out non-positive premium records
+        valid_mask = group["PREMIUM"].fillna(0) > 0
         valid_group = group[valid_mask]
         if valid_group.empty:
             continue
