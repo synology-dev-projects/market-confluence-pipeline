@@ -200,3 +200,37 @@ def test_schema_table_definitions():
     assert "qualifying_bear_exhaustion_count" in DAILY_CONFLUENCE_SUMMARY.c
     assert "top_catalyst_ticker" in DAILY_CONFLUENCE_SUMMARY.c
     assert "top_catalyst_expiry" in DAILY_CONFLUENCE_SUMMARY.c
+
+
+def test_index_exclusion_and_spot_validity():
+    from src.pipeline.confluence_scorer import score_and_classify_record
+
+    # 1. Broad index exclusion
+    vix_cand = {
+        "ticker": "VIX",
+        "spot_price": 14.53,
+        "gex_above_pct": 90.0,
+        "dex_above_pct": 99.0,
+        "call_wall": 14.5,
+        "dominant_expiration": "2026-09-18",
+        "call_premium": 5_000_000.0,
+        "put_premium": 0.0,
+        "flow_hits_count": 1,
+        "gex_available": True
+    }
+    res = score_and_classify_record(vix_cand)
+    assert res["play_type"] is None
+    assert res["confluence_status"] == "INDEX_EXCLUDED"
+
+    # 2. Invalid spot price
+    bad_spot = {
+        "ticker": "AAPL",
+        "spot_price": 0.0,
+        "gex_above_pct": 90.0,
+        "dex_above_pct": 90.0,
+        "call_wall": 230.0,
+        "gex_available": True
+    }
+    res_bad = score_and_classify_record(bad_spot)
+    assert res_bad["play_type"] is None
+    assert res_bad["confluence_status"] == "INVALID_SPOT"

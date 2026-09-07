@@ -47,12 +47,23 @@ def score_and_classify_record(item: Dict[str, Any]) -> Dict[str, Any]:
     res["confluence_score"] = 0.0
     res["confluence_rationale"] = "Does not meet the strict >= 80% exposure imbalance threshold."
 
+    ticker_str = str(item.get("ticker", "SYM")).upper().strip()
+    EXCLUDED_BROAD_INDICES = {"VIX", "SPX", "NDX", "RUT", "DJX", "XSP", "MRUT", "VXX", "UVXY"}
+    if ticker_str in EXCLUDED_BROAD_INDICES:
+        res["confluence_status"] = "INDEX_EXCLUDED"
+        res["confluence_rationale"] = f"{ticker_str}: Broad market and volatility indices are excluded from asymmetric radar."
+        return res
+
     if not item.get("gex_available"):
         res["confluence_status"] = "FLOW_ONLY"
-        res["confluence_rationale"] = f"{item.get('ticker', 'SYM')}: Options flow observed, but GEX/DEX dealer inventory unavailable."
+        res["confluence_rationale"] = f"{ticker_str}: Options flow observed, but GEX/DEX dealer inventory unavailable."
         return res
 
     spot = float(item.get("spot_price") or 0.0)
+    if spot <= 0:
+        res["confluence_status"] = "INVALID_SPOT"
+        res["confluence_rationale"] = f"{ticker_str}: Invalid spot price (${spot:.2f})."
+        return res
     gex_above = item.get("gex_above_pct")
     dex_above = item.get("dex_above_pct")
     call_wall = float(item.get("call_wall") or 0.0)
@@ -159,26 +170,32 @@ def score_and_classify_record(item: Dict[str, Any]) -> Dict[str, Any]:
     else:
         flow_ratio = min(round(put_prem / max(call_prem, 1.0), 2), 999.99)
 
-    if flow_ratio >= 3.0:
-        s_flow = 100.0
-    elif flow_ratio >= 2.0:
-        s_flow = 85.0
-    elif flow_ratio >= 1.2:
-        s_flow = 70.0
+    # Require multi-print institutional confirmation for high flow score; damp 1-print outliers
+    hits_count = int(item.get("flow_hits_count") or item.get("whale_prints_count") or 1)
+    if hits_count >= 2:
+        if flow_ratio >= 3.0:
+            s_flow = 100.0
+        elif flow_ratio >= 2.0:
+            s_flow = 85.0
+        elif flow_ratio >= 1.2:
+            s_flow = 70.0
+        else:
+            s_flow = 40.0
     else:
-        s_flow = 40.0
+        # Single-print outlier dampening: capped at 60.0
+        s_flow = 60.0 if flow_ratio >= 2.0 else 40.0
 
     # 4. Flow DB Hit Frequency Score (S_hit_count, 10% Weight)
-    hits_count = int(item.get("flow_hits_count") or item.get("whale_prints_count") or 1)
-
     if hits_count >= 15:
         s_hits = 100.0
     elif hits_count >= 8:
         s_hits = 85.0
     elif hits_count >= 3:
         s_hits = 70.0
+    elif hits_count >= 2:
+        s_hits = 55.0
     else:
-        s_hits = 50.0
+        s_hits = 35.0
 
     # Total Viability Score
     v_score = round(

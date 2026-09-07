@@ -52,6 +52,11 @@ def get_latest_flow_date(engine: sa.Engine) -> Optional[date]:
     return None
 
 
+EXCLUDED_BROAD_INDICES = {
+    "VIX", "SPX", "NDX", "RUT", "DJX", "XSP", "MRUT", "VXX", "UVXY"
+}
+
+
 def collect_flow_candidates(
     engine: sa.Engine,
     target_date: Optional[date] = None,
@@ -97,16 +102,26 @@ def collect_flow_candidates(
     candidates: List[Dict[str, Any]] = []
     for sym, group in df.groupby("SYMBOL"):
         sym_str = str(sym).upper().strip()
-        total_prem = float(group["PREMIUM"].fillna(0).sum())
+        if sym_str in EXCLUDED_BROAD_INDICES:
+            logger.info(f"Excluding broad market/volatility index symbol: {sym_str}")
+            continue
+
+        # Filter out artifact prints (strike <= 0 or missing values)
+        valid_mask = group["STRIKE_PRICE"].fillna(0) > 0
+        valid_group = group[valid_mask]
+        if valid_group.empty:
+            continue
+
+        total_prem = float(valid_group["PREMIUM"].fillna(0).sum())
 
         if total_prem < min_symbol_premium:
             continue
 
-        call_mask = group["ORDER_TYPE"].astype(str).str.contains("CALL", case=False, na=False)
-        put_mask = group["ORDER_TYPE"].astype(str).str.contains("PUT", case=False, na=False)
+        call_mask = valid_group["ORDER_TYPE"].astype(str).str.contains("CALL", case=False, na=False)
+        put_mask = valid_group["ORDER_TYPE"].astype(str).str.contains("PUT", case=False, na=False)
 
-        call_prem = float(group.loc[call_mask, "PREMIUM"].fillna(0).sum())
-        put_prem = float(group.loc[put_mask, "PREMIUM"].fillna(0).sum())
+        call_prem = float(valid_group.loc[call_mask, "PREMIUM"].fillna(0).sum())
+        put_prem = float(valid_group.loc[put_mask, "PREMIUM"].fillna(0).sum())
 
         call_pct = round((call_prem / total_prem * 100.0), 1) if total_prem > 0 else 0.0
         put_pct = round((put_prem / total_prem * 100.0), 1) if total_prem > 0 else 0.0
