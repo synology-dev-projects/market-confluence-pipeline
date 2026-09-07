@@ -89,6 +89,8 @@ def run_pipeline(target_date_str: str = None, min_premium: float = 1_000_000.0) 
 
     # 7. Step 4: Idempotent Upsert to PostgreSQL
     try:
+        with engine.begin() as conn:
+            conn.execute(sa.text("DELETE FROM daily_confluence_scans WHERE scan_date = :dt"), {"dt": resolved_date})
         upsert_scans(engine, scored_records)
         upsert_summary(engine, summary_record)
     except Exception as ex:
