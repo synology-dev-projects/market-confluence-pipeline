@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger("quant.pipeline.confluence.gexdex")
 
-GEXDEX_API_URL = os.getenv("GEXDEX_API_URL", "http://192.168.1.68:8090")
+GEXDEX_API_URL = os.getenv("GEXDEX_API_URL", "http://192.168.1.68:8095")
 GEXDEX_API_KEY = os.getenv("GEXDEX_API_KEY", "YOUR_SECRET_API_KEY_HERE")
 
 
