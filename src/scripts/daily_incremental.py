@@ -42,72 +42,72 @@ def run_pipeline(target_date_str: str = None, min_premium: float = 1_000_000.0) 
     logger.info("   STARTING MARKET CONFLUENCE DAILY INCREMENTAL PIPELINE")
     logger.info("======================================================================")
 
-    # 1. Resolve Engine via common_lib
+    config = None
     try:
+        # 1. Resolve Engine via common_lib
         from common_lib.config.main_config import load_config
         from common_lib.connectors.postgres import get_postgres_engine
         config = load_config()
         engine = get_postgres_engine(config)
-    except Exception as ex:
-        logger.error(f"Failed to initialize PostgreSQL database engine: {ex}")
-        return 1
 
-    # 2. Ensure Target Tables Exist
-    try:
+        # 2. Ensure Target Tables Exist
         ensure_tables(engine)
-    except Exception as ex:
-        logger.error(f"Failed to ensure database tables: {ex}")
-        return 1
 
-    # 3. Parse Target Date
-    target_dt = None
-    if target_date_str:
-        try:
+        # 3. Parse Target Date
+        target_dt = None
+        if target_date_str:
             target_dt = pd.to_datetime(target_date_str).date()
-        except Exception as ex:
-            logger.error(f"Invalid target date format '{target_date_str}': {ex}")
-            return 1
 
-    # 4. Step 1: Collect Flow Candidates
-    resolved_date, flow_candidates = collect_flow_candidates(
-        engine,
-        target_date=target_dt,
-        min_symbol_premium=min_premium
-    )
+        # 4. Step 1: Collect Flow Candidates
+        resolved_date, flow_candidates = collect_flow_candidates(
+            engine,
+            target_date=target_dt,
+            min_symbol_premium=min_premium
+        )
 
-    if not flow_candidates:
-        logger.info(f"No flow records found or staleness circuit breaker engaged for date={resolved_date}. Exiting cleanly.")
-        return 0
+        if not flow_candidates:
+            logger.info(f"No flow records found or staleness circuit breaker engaged for date={resolved_date}. Exiting cleanly.")
+            return 0
 
-    logger.info(f"Identified {len(flow_candidates)} prospective symbols from unusual flow for {resolved_date}.")
+        logger.info(f"Identified {len(flow_candidates)} prospective symbols from unusual flow for {resolved_date}.")
 
-    # 5. Step 2: Match with GEX/DEX
-    matched_candidates = match_candidates_gexdex(flow_candidates)
+        # 5. Step 2: Match with GEX/DEX
+        matched_candidates = match_candidates_gexdex(flow_candidates)
 
-    # 6. Step 3: Confluence Scoring & Classification
-    scored_records = score_all_candidates(matched_candidates)
-    summary_record = build_daily_summary(resolved_date, scored_records, total_watchlist_count=len(flow_candidates))
+        # 6. Step 3: Confluence Scoring & Classification
+        scored_records = score_all_candidates(matched_candidates)
+        summary_record = build_daily_summary(resolved_date, scored_records, total_watchlist_count=len(flow_candidates))
 
-    # 7. Step 4: Idempotent Upsert to PostgreSQL
-    try:
+        # 7. Step 4: Idempotent Upsert to PostgreSQL
         with engine.begin() as conn:
             conn.execute(sa.text("DELETE FROM daily_confluence_scans WHERE scan_date = :dt"), {"dt": resolved_date})
         upsert_scans(engine, scored_records)
         upsert_summary(engine, summary_record)
-    except Exception as ex:
-        logger.error(f"Failed to upsert records into PostgreSQL: {ex}")
-        return 1
 
-    logger.info("----------------------------------------------------------------------")
-    logger.info(f"  ASYMMETRIC RADAR SCAN COMPLETE: {resolved_date}")
-    logger.info(f"  Watchlist Scanned  : {summary_record['total_watchlist_count']}")
-    logger.info(f"  Qualifying Plays   : {summary_record['total_scanned_count']} (Top 10 Capped)")
-    logger.info(f"  Bull Springs       : {summary_record['qualifying_bull_spring_count']}")
-    logger.info(f"  Bear Exhaustions   : {summary_record['qualifying_bear_exhaustion_count']}")
-    logger.info(f"  Top Catalyst       : {summary_record['top_catalyst_ticker']} ({summary_record['top_catalyst_expiry']})")
-    logger.info(f"  Market Regime      : {summary_record['market_regime_summary']}")
-    logger.info("======================================================================")
-    return 0
+        logger.info("----------------------------------------------------------------------")
+        logger.info(f"  ASYMMETRIC RADAR SCAN COMPLETE: {resolved_date}")
+        logger.info(f"  Watchlist Scanned  : {summary_record['total_watchlist_count']}")
+        logger.info(f"  Qualifying Plays   : {summary_record['total_scanned_count']} (Top 10 Capped)")
+        logger.info(f"  Bull Springs       : {summary_record['qualifying_bull_spring_count']}")
+        logger.info(f"  Bear Exhaustions   : {summary_record['qualifying_bear_exhaustion_count']}")
+        logger.info(f"  Top Catalyst       : {summary_record['top_catalyst_ticker']} ({summary_record['top_catalyst_expiry']})")
+        logger.info(f"  Market Regime      : {summary_record['market_regime_summary']}")
+        logger.info("======================================================================")
+        return 0
+
+    except Exception as ex:
+        logger.error(f"Market Confluence pipeline failed: {ex}", exc_info=True)
+        try:
+            from common_lib.connectors.alerts import dispatch_pipeline_failure_alert
+            dispatch_pipeline_failure_alert(
+                pipeline_name="Market Confluence",
+                error=ex,
+                session_date=target_date_str,
+                config=config
+            )
+        except Exception as alert_ex:
+            logger.error(f"Failed to dispatch failure alert: {alert_ex}")
+        return 1
 
 
 def main():
