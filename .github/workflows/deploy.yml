@@ -69,8 +69,9 @@ jobs:
           chmod -R 775 "$TARGET_PATH"
           
           # Copy requirement files if they exist
-          [ -f requirements.txt ] && cp requirements.txt "$TARGET_PATH/"
-          [ -f requirements.in ] && cp requirements.in "$TARGET_PATH/"
+          [ -f requirements.txt ] && cp requirements.txt "$TARGET_PATH/" || true
+          [ -f requirements.in ] && cp requirements.in "$TARGET_PATH/" || true
+          echo "✅ Files successfully synced to project root."
 
       # 4.5 SETUP PYTHON
       - name: Set up Python 3.13
