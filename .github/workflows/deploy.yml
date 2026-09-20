@@ -1,0 +1,131 @@
+name: Branch-Based Deployment Pipeline
+
+on:
+  push:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy-branch:
+    runs-on: self-hosted
+
+    steps:
+      # 1. CLEANUP (Runner Workspace)
+      - name: Clean Runner Workspace
+        run: |
+          echo "🧹 Cleaning previous runner artifacts..."
+          rm -rf ./*
+          rm -rf ./.??*
+
+      # 2. CHECKOUT
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # 3. SETUP VARIABLES (Calculate Path EARLY)
+      - name: Configure Deployment Paths and Common Config
+        run: |
+          SYNOLOGY_ROOT_PATH="/volume2/homes/rachardv/git-repos"
+          echo "SYNOLOGY_ROOT_PATH=$SYNOLOGY_ROOT_PATH" >> $GITHUB_ENV
+
+          # Calculate Variables
+          BRANCH_NAME="${{ github.ref_name }}"
+          REPO_NAME="${{ github.event.repository.name }}"
+          
+          TARGET_PATH="${SYNOLOGY_ROOT_PATH}/${BRANCH_NAME}/${REPO_NAME}"
+          COMMON_CONFIG_PATH="${SYNOLOGY_ROOT_PATH}/${BRANCH_NAME}/common_config"
+          mkdir -p "$COMMON_CONFIG_PATH"
+          
+          echo "📂 Target Path: $TARGET_PATH"
+          echo "DEPLOY_DIR=$TARGET_PATH" >> $GITHUB_ENV
+          
+          echo "📂 Config Path: $COMMON_CONFIG_PATH"
+          echo "CONFIG_DIR=$COMMON_CONFIG_PATH" >> $GITHUB_ENV
+
+      # 4. DEPLOY CODE (Copy files BEFORE installing deps)
+      - name: Sync Code to Project Root
+        run: |
+          TARGET_PATH="${{ env.DEPLOY_DIR }}"
+          mkdir -p "$TARGET_PATH"
+
+          # Wipe OLD source code to ensure deleted files are removed
+          # NOTE: We do NOT delete .venv, allowing it to persist!
+          echo "🧹 Wiping old src/, tests/, and configs..."
+          rm -rf "$TARGET_PATH"/*
+
+          # Copy NEW files to the persistent project root
+          echo "🚀 Copying new files..."
+          cp -r src "$TARGET_PATH/"
+          cp -r tests "$TARGET_PATH/"
+          [ -f verify.sh ] && cp verify.sh "$TARGET_PATH/"
+          [ -f pytest.ini ] && cp pytest.ini "$TARGET_PATH/"
+          
+          sudo chown -R 1026:100 "$TARGET_PATH"
+          chmod -R 775 "$TARGET_PATH"
+          
+          # Copy requirement files if they exist
+          [ -f requirements.txt ] && cp requirements.txt "$TARGET_PATH/"
+          [ -f requirements.in ] && cp requirements.in "$TARGET_PATH/"
+
+      # 4.5 SETUP PYTHON
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # 5. MANAGE VENV (Run execution INSIDE Project Root)
+      - name: Update Project Virtualenv
+        run: |
+          cd "${{ env.DEPLOY_DIR }}"
+          
+          # 1. Create .venv if missing or if Python version < 3.12
+          if [ ! -d ".venv" ] || ! .venv/bin/python -c "import sys; exit(0 if sys.version_info >= (3, 12) else 1)" 2>/dev/null; then
+            echo "🔨 Creating new Python 3.13 virtual environment in project root..."
+            rm -rf .venv
+            python3 -m venv .venv
+          else
+            echo "✅ Existing .venv found. Updating..."
+          fi
+          
+          # 2. Activate
+          source .venv/bin/activate
+          pip install --upgrade pip pip-tools
+          
+          echo "📦 Installing dependencies..."
+          pip install -r requirements.txt
+          
+          # Inject the local shared library safely
+          if [ -d "../common-lib" ]; then
+            echo "📦 Installing local common-lib from ../common-lib..."
+            pip install -e ../common-lib
+          elif [ -d "/volume2/homes/rachardv/git-repos/master/common-lib" ]; then
+            echo "📦 Installing local common-lib from master..."
+            pip install -e /volume2/homes/rachardv/git-repos/master/common-lib
+          elif [ -d "/volume2/homes/rachardv/git-repos/develop2/common-lib" ]; then
+            echo "📦 Installing local common-lib from develop2..."
+            pip install -e /volume2/homes/rachardv/git-repos/develop2/common-lib
+          fi
+          
+          # 4. Add to Path (so verify.sh finds it)
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
+      # 5.5 IN-SITU TEST GATE
+      - name: Run In-Situ Test Gate
+        run: |
+          echo "🧪 Running Market Confluence Pytest Suite in virtualenv..."
+          cd "${{ env.DEPLOY_DIR }}"
+          source .venv/bin/activate
+          python -m pytest tests/ -v
+
+      # 6. IN-SITU MODULE SMOKE CHECK
+      - name: Verify Module Imports
+        run: |
+          echo "📡 Verifying Market Confluence pipeline module imports on Synology runner..."
+          cd "${{ env.DEPLOY_DIR }}"
+          export PATH="$(pwd)/.venv/bin:$PATH"
+          python -c "from src.scripts.daily_incremental import run_pipeline; print('✅ market-confluence-pipeline modules import cleanly!')"
