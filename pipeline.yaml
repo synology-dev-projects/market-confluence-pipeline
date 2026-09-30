@@ -1,0 +1,14 @@
+name: market_confluence
+display_name: Market Confluence Radar
+description: Scores multi-factor asymmetric confluence radar against flow and GEX/DEX
+version: 1.0.0
+category: confluence
+upstream:
+  - unusual_option_flow
+  - gexdex_snapshot
+target_tables:
+  - daily_confluence_scans
+  - daily_confluence_summary
+timeout_sec: 600
+schedule: "25 9 * * 1-5"
+runner: market-confluence-pipeline.src.scripts.daily_incremental:run_pipeline
