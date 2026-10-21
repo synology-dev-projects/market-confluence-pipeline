@@ -61,11 +61,11 @@ def collect_flow_candidates(
     engine: sa.Engine,
     target_date: Optional[date] = None,
     min_symbol_premium: float = 1_000_000.0,
-    top_n: int = 50
+    top_n: int = 25
 ) -> Tuple[Optional[date], List[Dict[str, Any]]]:
     """
     Collects and aggregates institutional options flow grouped by symbol for the target_date.
-    Returns the Top N tickers (default 50) by total institutional premium as the primary watchlist.
+    Returns the Top N tickers (default 25) by total institutional premium as the primary watchlist.
     Applies staleness checking: if target_date is not specified, uses the latest session date.
     Returns: (resolved_scan_date, list of aggregated candidate dictionaries)
     """
