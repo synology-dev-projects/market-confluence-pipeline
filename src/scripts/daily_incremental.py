@@ -84,6 +84,13 @@ def run_pipeline(target_date_str: str = None, min_premium: float = 1_000_000.0) 
         upsert_scans(engine, scored_records)
         upsert_summary(engine, summary_record)
 
+        try:
+            from common_lib.orchestration.state import record_run_start, record_run_success
+            run_id = record_run_start(engine, "market_confluence", resolved_date)
+            record_run_success(engine, run_id, rows_affected=len(scored_records))
+        except Exception as run_err:
+            logger.debug(f"Could not record pipeline_runs entry: {run_err}")
+
         logger.info("----------------------------------------------------------------------")
         logger.info(f"  ASYMMETRIC RADAR SCAN COMPLETE: {resolved_date}")
         logger.info(f"  Watchlist Scanned  : {summary_record['total_watchlist_count']}")
