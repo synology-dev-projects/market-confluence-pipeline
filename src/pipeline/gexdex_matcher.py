@@ -54,15 +54,23 @@ def match_candidates_gexdex(
     tickers = [c["ticker"] for c in candidates]
     metrics_map = {}
 
-    # 1. Attempt GEX/DEX Microservice HTTP API with chunking (10 tickers per request)
+    # 1. Attempt GEX/DEX Microservice HTTP API with chunking (10 tickers per request, hard max 5 requests)
     chunk_size = 10
     timeout_sec = 60
+    MAX_MATCHER_REQUESTS = 5
+    request_count = 0
+
     for i in range(0, len(tickers), chunk_size):
+        if request_count >= MAX_MATCHER_REQUESTS:
+            logger.warning(f"🛑 [RATE LIMIT GUARD] Capped at {MAX_MATCHER_REQUESTS} microservice requests for confluence matching.")
+            break
+
         chunk = tickers[i:i + chunk_size]
         try:
             url = f"{GEXDEX_API_URL.rstrip('/')}/api/v1/gexdex"
             headers = {"X-API-Key": GEXDEX_API_KEY}
             params = {"tickers": ",".join(chunk)}
+            request_count += 1
             resp = requests.get(url, headers=headers, params=params, timeout=timeout_sec)
             if resp.ok:
                 api_data = resp.json()
@@ -74,7 +82,7 @@ def match_candidates_gexdex(
         except Exception as api_err:
             logger.warning(f"GEX/DEX HTTP query chunk {i//chunk_size + 1} failed: {api_err}")
 
-    logger.info(f"Retrieved GEX/DEX API data for {len(metrics_map)} / {len(tickers)} total tickers.")
+    logger.info(f"Retrieved GEX/DEX API data for {len(metrics_map)} / {len(tickers)} total tickers (Dispatched {request_count} requests).")
 
     # 2. Fallback to in-process engine if API failed or returned empty
     if not metrics_map:
