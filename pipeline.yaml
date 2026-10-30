@@ -10,5 +10,5 @@ target_tables:
   - daily_confluence_scans
   - daily_confluence_summary
 timeout_sec: 600
-schedule: "25 9 * * 1-5"
+schedule: "30 9 * * 1-5"
 runner: market-confluence-pipeline.src.scripts.daily_incremental:run_pipeline
