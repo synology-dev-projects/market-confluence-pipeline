@@ -97,8 +97,17 @@ jobs:
           source .venv/bin/activate
           pip install --upgrade pip pip-tools
           
-          echo "📦 Installing dependencies..."
-          pip install -r requirements.txt
+          echo "📦 Evaluating dependencies..."
+          CURRENT_HASH=$(md5sum requirements.txt 2>/dev/null | cut -d' ' -f1 || echo "none")
+          STORED_HASH=$(cat .requirements.hash 2>/dev/null || echo "")
+          if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
+            echo "📦 requirements.txt changed ($STORED_HASH -> $CURRENT_HASH). Installing dependencies..."
+            pip install --upgrade pip
+            pip install -r requirements.txt
+            echo "$CURRENT_HASH" > .requirements.hash
+          else
+            echo "⚡ requirements.txt unchanged ($CURRENT_HASH). Skipping redundant pip install!"
+          fi
           
           # Inject the local shared library safely
           if [ -d "../common-lib" ]; then
