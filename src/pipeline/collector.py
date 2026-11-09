@@ -94,8 +94,20 @@ def collect_flow_candidates(
         df = pd.read_sql_query(sql_query, conn, params={"t_date": str(resolved_date)})
 
     if df.empty:
-        logger.warning(f"No options flow records found for trade_date={resolved_date}")
-        return resolved_date, []
+        # If target_date was specified but yielded 0 records, fall back to the latest available flow date
+        latest_available = get_latest_flow_date(engine)
+        if latest_available and latest_available != resolved_date:
+            logger.info(
+                f"No options flow records found for trade_date={resolved_date}. "
+                f"Gracefully falling back to latest available flow date={latest_available}."
+            )
+            resolved_date = latest_available
+            with engine.connect() as conn:
+                df = pd.read_sql_query(sql_query, conn, params={"t_date": str(resolved_date)})
+
+        if df.empty:
+            logger.warning(f"No options flow records found for trade_date={resolved_date}")
+            return resolved_date, []
 
     df.columns = df.columns.str.upper()
 
